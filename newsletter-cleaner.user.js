@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         Newsletter Cleaner
 // @namespace    https://github.com/hypnoglow/userscripts
-// @version      1.0.0
+// @version      1.0.1
 // @description  Strip everything from periodic newsletters except article-link sections. Per-source rule registry; toggle badge to reveal the full page.
 // @author       Igor Zibarev
 // @license      MIT
 // @homepageURL  https://github.com/hypnoglow/userscripts
 // @supportURL   https://github.com/hypnoglow/userscripts/issues
 // @match        https://factory.faun.dev/newsletters/*
+// @match        https://info.thenewstack.io/tns-weekly-update-*
 // @run-at       document-end
 // @grant        none
 // ==/UserScript==
@@ -19,11 +20,23 @@
   // Rule registry. One entry per newsletter source.
   // Add a new newsletter = add a new entry here; nothing else changes.
   //
-  //   match      : (location) => boolean        — does this rule apply to the page?
-  //   keepTitles : string[]                      — section titles to KEEP (lowercased substring match)
-  //   sectionSel : string                        — selector for a section block
-  //   titleSel   : string                        — selector for the section title inside a block
-  //   hideSel    : string[]                      — extra chrome to hide (banners, footer, logo, ...)
+  //   match         : (location) => boolean     — does this rule apply to the page?
+  //   sectionSel    : string                    — selector for a section block
+  //   titleSel      : string                    — selector(s) for title elements inside a block
+  //   hideSel       : string[]                  — extra chrome to hide (banners, footer, logo, ...)
+  //
+  // Section selection (use ONE of the modes below):
+  //
+  //   keepTitles    : string[]                  — WHITELIST: keep sections whose title text
+  //                                                (lowercased) contains any of these substrings.
+  //   hideTitles    : string[]                  — BLOCKLIST: hide sections whose title text
+  //                                                contains any of these substrings.
+  //   hideTitleTags : string[]                  — BLOCKLIST: hide sections containing a title
+  //                                                with one of these tag names (e.g. 'H3' for ads).
+  //
+  // Blocklist mode (hideTitles / hideTitleTags) also hides sections with no title at all
+  // (typically chrome / dividers). Use blocklist when article titles change weekly and only
+  // ads / chrome are stable enough to enumerate.
   // -------------------------------------------------------------------------
   const RULES = [
     {
@@ -42,6 +55,26 @@
         '.header-section .topic-description', // tagline — keep only h1.topic-title
       ],
     },
+    {
+      // HubSpot-rendered weekly newsletter. Each block is a div.hse-section.
+      // Sponsor ads use H3 titles; real content uses <strong>. Chrome blocks
+      // have no title at all. Hide ads + the standing "events & webinars",
+      // "podcast" and "quote of the week" sections; keep the lead story and
+      // "TNS essential reads" (the article-link section).
+      name: 'TheNewStack',
+      match: (loc) =>
+        loc.hostname === 'info.thenewstack.io' &&
+        loc.pathname.startsWith('/tns-weekly-update-'),
+      sectionSel: 'div.hse-section',
+      titleSel: 'h1, h2, h3, h4, h5, strong',
+      hideTitles: [
+        'events & webinars', // standing webinars block
+        'catch the episode', // appears in the weekly podcast section
+        'quote of the week', // standing quote block
+      ],
+      hideTitleTags: ['H3'], // sponsor ads ("Together with ...") use H3
+      hideSel: [],
+    },
   ];
 
   const rule = RULES.find((r) => r.match(location));
@@ -55,21 +88,43 @@
     }
   };
 
-  // 1) Sections: keep whitelisted titles, hide the rest.
-  let kept = 0;
-  document.querySelectorAll(rule.sectionSel).forEach((section) => {
-    const titleEl = section.querySelector(rule.titleSel);
-    const title = titleEl ? titleEl.textContent.toLowerCase() : '';
-    if (rule.keepTitles.some((k) => title.includes(k))) {
-      kept++;
-    } else {
-      hide(section);
+  // 1) Sections: decide keep/hide per rule, then apply.
+  //    Doing this in two passes lets the safety check bail BEFORE we hide
+  //    anything, so a markup change can never leave a blank page.
+  const decideKeep = (titleEls) => {
+    if (rule.keepTitles) {
+      const joined = titleEls.map((t) => t.textContent.toLowerCase()).join(' ');
+      return rule.keepTitles.some((k) => joined.includes(k));
     }
-  });
+    // Blocklist mode: no title => chrome, hide.
+    if (titleEls.length === 0) return false;
+    if (
+      (rule.hideTitleTags || []).some((tag) =>
+        titleEls.some((t) => t.tagName === tag),
+      )
+    )
+      return false;
+    const joined = titleEls.map((t) => t.textContent.toLowerCase()).join(' ');
+    if ((rule.hideTitles || []).some((h) => joined.includes(h))) return false;
+    return true;
+  };
 
-  // Safety: if nothing matched the whitelist, leave the page untouched
+  const decisions = [...document.querySelectorAll(rule.sectionSel)].map(
+    (section) => {
+      const titleEls = [...section.querySelectorAll(rule.titleSel)].filter(
+        (t) => t.textContent.trim().length > 0,
+      );
+      return { section, keep: decideKeep(titleEls) };
+    },
+  );
+
+  // Safety: if nothing matched, leave the page untouched
   // (better a noisy page than a blank one).
-  if (kept === 0) return;
+  if (!decisions.some((d) => d.keep)) return;
+
+  decisions.forEach((d) => {
+    if (!d.keep) hide(d.section);
+  });
 
   // 2) Hide extra chrome (banners, footer, logo, ...).
   (rule.hideSel || []).forEach((sel) => hide(document.querySelector(sel)));

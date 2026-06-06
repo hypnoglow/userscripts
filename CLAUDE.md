@@ -68,3 +68,48 @@ tools available:
   HTML or hrefs.)
 - Match section titles by lowercased **substring** (e.g. `'stories'`), not exact
   text, so emoji and punctuation in the title don't break the rule.
+
+## newsletter-cleaner-protonmail: email version
+
+Sibling script for the ProtonMail web UI (`mail.proton.me`). Instead of running
+on the newsletter's own website, it operates on the email as rendered inside
+ProtonMail's message iframe. The iframe's `src` is `about:blank`, but its
+`sandbox` attribute includes `allow-same-origin`, so the parent-page userscript
+can read and mutate `iframe.contentDocument` directly. Because all iframes share
+the same `about:blank` URL, source identification uses `detect(iframeDoc)` —
+a function that inspects the iframe's content — rather than a URL match. The
+section model for FAUN.dev emails is one `table.outer` per section, title at
+`td.section_title`; outer tables with no title element are chrome (masthead,
+footer) and are hidden by the same loop.
+
+The rule registry supports both whitelist and blocklist modes (same semantics as
+the web-mirror script): use `keepTitles` for sources where article-section titles
+are stable, or `hideTitles`/`hideTitleTags` for sources where only ads/chrome are
+enumerable (e.g. TheNewStack). A two-pass implementation ensures the safety
+guarantee (page never goes blank) applies in both modes.
+
+### Adding a new newsletter source (email)
+
+1. Open the email in ProtonMail. In the parent-page console run
+   `document.querySelectorAll('iframe')[0].contentDocument` and confirm it
+   returns a document (not null / throws) — this verifies `allow-same-origin`.
+2. Identify the repeating section container (very often a top-level `<table>`).
+   Check that section titles follow a consistent selector inside each container.
+3. Pick a `detect()` signal unique to that newsletter: a sender-specific string
+   present in `body.textContent`, or a tracking domain in `a[href]`.
+4. Add the rule entry to the `RULES` array in `newsletter-cleaner-protonmail.user.js`.
+
+### Gotchas
+
+- ProtonMail is an SPA; the email iframe appears and disappears without page
+  navigation. The script uses a `MutationObserver` on `document.body` to catch
+  new iframes, and marks processed iframes with `iframe.dataset.nlCleaner =
+  'applied'` so they are not re-processed. When ProtonMail recreates the iframe
+  element (e.g. on switching emails), the new element has no marker and is
+  processed fresh.
+- ProtonMail hosts other iframes that are cross-origin (Proton AI assistant,
+  account storage frames). Accessing their `contentDocument` throws. Always wrap
+  `iframe.contentDocument` access in try/catch.
+- The toggle badge is injected inside the iframe document, not the parent page,
+  so `position: fixed` is relative to the iframe's own scrolling viewport —
+  which is correct, because ProtonMail scrolls the iframe itself.
