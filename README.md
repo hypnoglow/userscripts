@@ -23,6 +23,14 @@ Currently supports web mirrors of:
 Same as `newsletter-cleaner.user.js`, but runs inside the ProtonMail web UI
 (`mail.proton.me`) and cleans newsletter emails rendered there.
 
+### [`inoreader.user.js`](inoreader.user.js)
+
+Extra keyboard shortcuts for inoreader.com. Currently binds the `i` key to
+click the Raindrop.io save button (`span[title="Raindrop.io"]`). Uses its
+own independent `keydown` listener, so it keeps working regardless of the
+state of other keybinding extensions (e.g. Surfingkeys enabled, lurking, or
+disabled on the page).
+
 ## Install
 
 1. Install the Tampermonkey browser extension.
