@@ -31,6 +31,12 @@ own independent `keydown` listener, so it keeps working regardless of the
 state of other keybinding extensions (e.g. Surfingkeys enabled, lurking, or
 disabled on the page).
 
+### [`x-bookmarks-raindrop.user.js`](x-bookmarks-raindrop.user.js)
+
+Adds a Raindrop.io button to every post on x.com. A click opens the Raindrop
+save popup for that post, as the browser extension does. The icon is grey
+until you click it and full colour afterwards (remembered in localStorage).
+
 ## Install
 
 1. Install the Tampermonkey browser extension.
